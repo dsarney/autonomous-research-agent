@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autonomous Research Agent</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <p class="eyebrow">Research agent</p>
+      <h1>Autonomous Research Agent</h1>
+    </div>
+    <p class="lede">Plans an investigation, searches the web, fills gaps, then writes a cited report.</p>
+  </header>
+  <div class="workspace">
+    <aside class="rail">
+      <section class="card composer">
+        <form id="research-form">
+          <label for="query">Research question</label>
+          <textarea id="query" name="query" required minlength="3" placeholder="Is the UK electric vehicle market a good opportunity for a new charging company?"></textarea>
+          <div class="actions">
+            <button type="submit" id="submit">Run research</button>
+            <button type="button" id="stop" disabled>Stop</button>
+          </div>
+        </form>
+        <p class="status" id="status"></p>
+      </section>
+    </aside>
+    <main class="canvas">
+      <div id="progress"></div>
+      <div id="output"></div>
+    </main>
+  </div>
+  <script src="/static/main.js" defer></script>
+</body>
+</html>

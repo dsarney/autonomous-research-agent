@@ -1,0 +1,121 @@
+{
+  "id": "fixture-ev-1",
+  "query": "Is the UK electric vehicle market a good opportunity for a new charging company?",
+  "status": "complete",
+  "error": null,
+  "plan": {
+    "objective": "Assess whether a new public charging company can find an attractive UK opportunity.",
+    "sub_questions": [
+      "How fast is UK EV adoption growing?",
+      "Who are the main charging competitors?",
+      "What policy and grants support charging?",
+      "Is infrastructure keeping pace with vehicles?",
+      "What commercial risks matter most?"
+    ],
+    "angles": ["market", "competitors", "policy", "infrastructure", "risks"]
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "searches": [
+        {
+          "query": "How fast is UK EV adoption growing?",
+          "notes": "Strong official data",
+          "sources": [
+            {
+              "id": "S1",
+              "url": "https://www.gov.uk/government/statistics/vehicle-licensing-statistics",
+              "title": "Vehicle licensing statistics",
+              "snippet": "Battery electric cars continue to gain share of new registrations.",
+              "relevance": 0.92,
+              "credibility_notes": "Official statistics",
+              "kept": true
+            }
+          ]
+        }
+      ],
+      "discarded_sources": [],
+      "assessment": {
+        "covered_questions": ["How fast is UK EV adoption growing?"],
+        "gaps": ["competitors"],
+        "follow_up_queries": ["UK public EV charging operators market share"],
+        "sufficient": false
+      }
+    },
+    {
+      "iteration": 2,
+      "searches": [
+        {
+          "query": "UK public EV charging operators market share",
+          "notes": "Competitive landscape",
+          "sources": [
+            {
+              "id": "S2",
+              "url": "https://www.zap-map.com/ev-stats/how-many-charging-points",
+              "title": "Zapmap charging stats",
+              "snippet": "Public charge point numbers and leading networks.",
+              "relevance": 0.84,
+              "credibility_notes": "Industry tracker",
+              "kept": true
+            }
+          ]
+        }
+      ],
+      "discarded_sources": [],
+      "assessment": {
+        "covered_questions": [
+          "How fast is UK EV adoption growing?",
+          "Who are the main charging competitors?"
+        ],
+        "gaps": ["unit economics"],
+        "follow_up_queries": [],
+        "sufficient": true
+      }
+    }
+  ],
+  "report": {
+    "executive_summary": "UK EV adoption is rising and public charging is expanding, but established networks already compete for sites and utilisation. A new charging company can find a niche, yet the opportunity is not an easy land-grab.",
+    "findings": [
+      {
+        "claim": "EV demand in the UK is still growing",
+        "evidence": "Official licensing statistics show battery-electric cars taking a larger share of new registrations.",
+        "source_ids": ["S1"],
+        "confidence": "high",
+        "confidence_rationale": "Primary government statistics"
+      },
+      {
+        "claim": "Public charging is already contested",
+        "evidence": "Industry trackers show a large installed base of public charge points and several national operators.",
+        "source_ids": ["S2"],
+        "confidence": "medium",
+        "confidence_rationale": "Industry data rather than audited filings"
+      }
+    ],
+    "gaps_and_risks": [
+      "Site acquisition and grid connections can delay revenue",
+      "Policy support for charging could change"
+    ],
+    "bibliography": [
+      {
+        "id": "S1",
+        "url": "https://www.gov.uk/government/statistics/vehicle-licensing-statistics",
+        "title": "Vehicle licensing statistics",
+        "snippet": "Battery electric cars continue to gain share of new registrations.",
+        "relevance": 0.92,
+        "credibility_notes": "Official statistics",
+        "kept": true
+      },
+      {
+        "id": "S2",
+        "url": "https://www.zap-map.com/ev-stats/how-many-charging-points",
+        "title": "Zapmap charging stats",
+        "snippet": "Public charge point numbers and leading networks.",
+        "relevance": 0.84,
+        "credibility_notes": "Industry tracker",
+        "kept": true
+      }
+    ]
+  },
+  "created_at": "2026-08-15T12:00:00Z",
+  "updated_at": "2026-08-15T12:00:00Z"
+}
