@@ -60,7 +60,7 @@ class Orchestrator:
         run.error = None
         bind = getattr(self.gateway, "bind_cancel", None)
         if callable(bind):
-            bind(cancel_event)
+            bind(cancel_event)  # Wire stop into the gateway before any LLM call.
         self._publish(run, "planning", "Planning the investigation", on_update)
         try:
             self._raise_if_cancelled(cancel_event)
@@ -100,6 +100,7 @@ class Orchestrator:
                 detail="You can edit the question and run again.",
             )
         except Exception as exc:
+            # close() / OpenAI can raise something other than RunCancelled.
             if cancel_event is not None and cancel_event.is_set():
                 run.status = "cancelled"
                 run.error = None
@@ -135,7 +136,9 @@ class Orchestrator:
         run.progress.append(ProgressEvent(stage=stage, label=label, detail=detail))
         run.updated_at = datetime.now(timezone.utc)
         if on_update is not None:
-            on_update(run.model_copy(deep=True))
+            on_update(
+                run.model_copy(deep=True)
+            )  # Pollers must not see a half-updated run.
 
     def _research_loop(
         self,
@@ -147,14 +150,18 @@ class Orchestrator:
         collected: list[Source] = []
         iterations: list[IterationLog] = []
         seen_urls: set[str] = set()
-        pending = list(plan.sub_questions)
+        pending = list(
+            plan.sub_questions
+        )  # Later rounds replace this with follow_up_queries.
         searches_used = 0
-        source_seq = 1
+        source_seq = (
+            1  # Global S1, S2, … across rounds; writer citations depend on this.
+        )
 
         for iteration in range(1, self.settings.max_iterations + 1):
             self._raise_if_cancelled(cancel_event)
             if not pending or searches_used >= self.settings.max_searches_per_run:
-                break
+                break  # Search budget exhausted or nothing left to query.
 
             searches = []
             discarded: list[Source] = []
@@ -202,6 +209,7 @@ class Orchestrator:
                 )
             )
             run.iterations = list(iterations)
+            # Stop on sufficient coverage or when the model returns no follow-ups.
             if assessment.sufficient:
                 self._publish(
                     run,

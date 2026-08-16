@@ -9,8 +9,10 @@ def normalize_url(url: str) -> str:
     raw = url.strip()
     parsed = urlparse(raw)
     if not parsed.scheme or not parsed.netloc:
+        # Malformed URLs: weaker dedup (lowercase + strip slash only).
         return raw.rstrip("/").lower()
     path = parsed.path.rstrip("/") or ""
+    # Strip fragment and lowercase host so gov.uk/ev matches GOV.UK/ev/.
     return urlunparse(
         (
             parsed.scheme.lower(),

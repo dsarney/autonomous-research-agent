@@ -17,6 +17,7 @@ class RunStore:
     def save(self, run: ResearchRun) -> ResearchRun:
         with self._lock:
             current = self._runs.get(run.id)
+            # Cancelled is terminal: a later worker save must not revive the run.
             if (
                 current is not None
                 and current.status == "cancelled"
@@ -41,6 +42,7 @@ class RunStore:
         return event
 
     def cancel(self, run_id: str) -> bool:
+        # Pop closer under the lock, then call it outside so close() cannot deadlock.
         with self._lock:
             event = self._cancel_events.get(run_id)
             closer = self._closers.pop(run_id, None)
@@ -51,10 +53,11 @@ class RunStore:
             try:
                 closer()
             except Exception:
-                pass
+                pass  # Cleanup must not mask a user stop.
         return True
 
     def finish(self, run_id: str) -> None:
+        # Worker cleanup: close the gateway without setting the cancel event.
         with self._lock:
             self._cancel_events.pop(run_id, None)
             closer = self._closers.pop(run_id, None)

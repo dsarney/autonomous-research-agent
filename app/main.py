@@ -49,6 +49,7 @@ def get_store() -> RunStore:
 
 
 def get_orchestrator(settings: Settings = Depends(get_settings)) -> Orchestrator:
+    # Treat the .env.example placeholder as unset so we fail before any LLM call.
     if not settings.openai_api_key or settings.openai_api_key == "your_openai_api_key":
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
     gateway = OpenAIGateway(
@@ -124,6 +125,7 @@ def start_run(
     run = ResearchRun(id=str(uuid.uuid4()), query=body.query.strip(), status="pending")
     store.save(run)
     closer = getattr(orchestrator.gateway, "close", None)
+    # Register cancel event + gateway close so Stop can abort an in-flight request.
     cancel_event = store.register(run.id, closer if callable(closer) else None)
     if body.wait:
         try:
@@ -144,6 +146,7 @@ def start_run(
         finally:
             store.finish(run.id)
 
+    # wait:false returns immediately; the UI polls until the daemon thread finishes.
     threading.Thread(target=_worker, daemon=True).start()
     return run
 
@@ -154,7 +157,7 @@ def stop_run(run_id: str, store: RunStore = Depends(get_store)) -> ResearchRun:
     if run is None:
         raise HTTPException(status_code=404, detail="Research run not found")
     if run.status in {"complete", "failed", "cancelled"}:
-        return run
+        return run  # Already terminal; stop is a no-op.
     run.status = "cancelled"
     run.current_stage = "cancelled"
     run.stage_label = "Stopped"
@@ -168,7 +171,9 @@ def stop_run(run_id: str, store: RunStore = Depends(get_store)) -> ResearchRun:
     ]
     run.updated_at = datetime.now(timezone.utc)
     store.save(run)
-    store.cancel(run_id)
+    store.cancel(
+        run_id
+    )  # After save so the worker sees cancelled before the event fires.
     return store.get(run_id) or run
 
 

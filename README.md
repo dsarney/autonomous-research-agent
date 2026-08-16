@@ -2,6 +2,13 @@
 
 An AI research app that plans an investigation, searches the web, evaluates coverage, fills gaps, and writes a cited report with confidence levels.
 
+## Clone
+
+```bash
+git clone https://github.com/dsarney/autonomous-research-agent.git
+cd autonomous-research-agent
+```
+
 ## Setup
 
 ```bash

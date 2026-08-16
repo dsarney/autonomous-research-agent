@@ -58,6 +58,7 @@ class Writer:
         allowed = {source.id: source for source in sources}
         cleaned_findings = []
         for finding in report.findings:
+            # Drop citation IDs the model invented that are not in the collected map.
             ids = [sid for sid in finding.source_ids if sid in allowed]
             cleaned_findings.append(finding.model_copy(update={"source_ids": ids}))
         bibliography = (
@@ -69,7 +70,7 @@ class Writer:
                 if item.id in allowed or item.url
             ]
         )
-        # Prefer the collected sources as bibliography of record.
+        # Collected sources overwrite the model list so the bibliography cannot include hallucinated IDs.
         bibliography = sources
         return report.model_copy(
             update={"findings": cleaned_findings, "bibliography": bibliography}

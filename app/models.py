@@ -57,7 +57,7 @@ class Source(BaseModel):
     snippet: str
     relevance: float = Field(ge=0.0, le=1.0)
     credibility_notes: str = ""
-    kept: bool = True
+    kept: bool = True  # Set by filter_sources, not the LLM.
 
     @field_validator("url")
     @classmethod
@@ -109,8 +109,10 @@ class ProgressEvent(BaseModel):
 class ResearchRun(BaseModel):
     id: str
     query: str
-    status: RunStatus = "pending"
-    current_stage: StageName = "queued"
+    status: RunStatus = (
+        "pending"  # Lifecycle: pending/running/complete/failed/cancelled
+    )
+    current_stage: StageName = "queued"  # UI pipeline step; can lag status briefly
     stage_label: str = "Queued"
     error: str | None = None
     plan: ResearchPlan | None = None

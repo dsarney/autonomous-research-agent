@@ -29,7 +29,9 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ query: queryEl.value, wait: false }),
       });
       if (!created.ok) {
-        const err = await created.json().catch(() => ({ detail: created.statusText }));
+        const err = await created
+          .json()
+          .catch(() => ({ detail: created.statusText }));
         throw new Error(formatDetail(err.detail) || "Failed to start research");
       }
       const run = await created.json();
@@ -72,16 +74,29 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function pipelineState(run, stepId) {
-    const order = ["queued", "planning", "searching", "evaluating", "writing", "complete"];
+    const order = [
+      "queued",
+      "planning",
+      "searching",
+      "evaluating",
+      "writing",
+      "complete",
+    ];
     let current = run.current_stage || "queued";
     let failedHere = false;
+    // Failed/cancelled: current_stage is the terminal stage, so infer the step
+    // that was running from the last non-terminal progress event.
     if (current === "failed" || run.status === "failed") {
-      const prior = (run.progress || []).filter((event) => event.stage !== "failed").at(-1);
+      const prior = (run.progress || [])
+        .filter((event) => event.stage !== "failed")
+        .at(-1);
       current = prior?.stage || "planning";
       failedHere = current === stepId;
     }
     if (current === "cancelled" || run.status === "cancelled") {
-      const prior = (run.progress || []).filter((event) => event.stage !== "cancelled").at(-1);
+      const prior = (run.progress || [])
+        .filter((event) => event.stage !== "cancelled")
+        .at(-1);
       current = prior?.stage || "planning";
       if (current === stepId) return "cancelled";
     }
@@ -145,7 +160,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <p><small>${escapeHtml(finding.confidence_rationale)}</small></p>
           <p><small>Sources: ${(finding.source_ids || []).join(", ") || "none"}</small></p>
         </article>
-      `
+      `,
       )
       .join("");
     const risks =
@@ -156,12 +171,13 @@ document.addEventListener("DOMContentLoaded", () => {
       (report.bibliography || [])
         .map(
           (source) =>
-            `<li>[${escapeHtml(source.id)}] <a href="${escapeAttr(source.url)}" target="_blank" rel="noopener">${escapeHtml(source.title)}</a> — ${escapeHtml(source.snippet)}</li>`
+            `<li>[${escapeHtml(source.id)}] <a href="${escapeAttr(source.url)}" target="_blank" rel="noopener">${escapeHtml(source.title)}</a> — ${escapeHtml(source.snippet)}</li>`,
         )
         .join("") || "<li>None</li>";
     const log = (run.iterations || [])
       .map((item) => {
-        const queries = (item.searches || []).map((s) => s.query).join("; ") || "none";
+        const queries =
+          (item.searches || []).map((s) => s.query).join("; ") || "none";
         const gaps = (item.assessment.gaps || []).join(", ") || "none";
         return `<li>Iteration ${item.iteration}: searched ${escapeHtml(queries)}. Gaps: ${escapeHtml(gaps)}. Sufficient: ${item.assessment.sufficient}</li>`;
       })

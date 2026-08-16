@@ -60,6 +60,8 @@ class OpenAIGateway:
 
         box: dict = {}
 
+        # Run the blocking parse on a daemon thread so we can poll cancel and
+        # close() the HTTP client mid-request.
         def worker() -> None:
             try:
                 box["response"] = self.client.responses.parse(**kwargs)
@@ -84,6 +86,7 @@ class OpenAIGateway:
 
     @property
     def _cancelled(self) -> bool:
+        # True if the user stopped the run or the gateway was already closed.
         return self._closed or (
             self._cancel_event is not None and self._cancel_event.is_set()
         )

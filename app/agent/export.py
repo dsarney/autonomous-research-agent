@@ -253,6 +253,7 @@ def _pdf_source_line(source: Source) -> str:
 
 
 def _add_hyperlink(paragraph, url: str, text: str) -> None:
+    # python-docx has no hyperlink API; raw OOXML workaround. PDF prints the URL as text.
     part = paragraph.part
     relationship_id = part.relate_to(url, RT.HYPERLINK, is_external=True)
     hyperlink = OxmlElement("w:hyperlink")
