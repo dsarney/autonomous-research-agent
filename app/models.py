@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 Confidence = Literal["high", "medium", "low"]
+SourceKind = Literal["web", "upload"]
 RunStatus = Literal["pending", "running", "complete", "failed", "cancelled"]
 StageName = Literal[
     "queued",
@@ -44,6 +45,14 @@ class RunRequest(BaseModel):
     wait: bool = False
 
 
+class UploadedDocument(BaseModel):
+    id: str
+    filename: str
+    content_type: str = ""
+    char_count: int = 0
+    excerpt: str = ""
+
+
 class ResearchPlan(BaseModel):
     objective: str
     sub_questions: list[str]
@@ -58,6 +67,7 @@ class Source(BaseModel):
     relevance: float = Field(ge=0.0, le=1.0)
     credibility_notes: str = ""
     kept: bool = True  # Set by filter_sources, not the LLM.
+    kind: SourceKind = "web"
 
     @field_validator("url")
     @classmethod
@@ -118,6 +128,7 @@ class ResearchRun(BaseModel):
     plan: ResearchPlan | None = None
     iterations: list[IterationLog] = Field(default_factory=list)
     report: Report | None = None
+    documents: list[UploadedDocument] = Field(default_factory=list)
     progress: list[ProgressEvent] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

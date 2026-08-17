@@ -6,7 +6,14 @@ from io import BytesIO
 from docx import Document
 from app.agent.export import report_to_docx, report_to_pdf
 from app.agent.writer import Writer
-from app.models import Finding, Report, ResearchPlan, ResearchRun, Source
+from app.models import (
+    Finding,
+    Report,
+    ResearchPlan,
+    ResearchRun,
+    Source,
+    UploadedDocument,
+)
 from tests.fakes import ScriptedGateway
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_run.json"
@@ -55,6 +62,61 @@ def test_writer_emits_schema_and_keeps_source_ids() -> None:
     assert report.findings[0].source_ids == ["S1"]
     assert [item.id for item in report.bibliography] == ["S1", "S2"]
     assert report.findings[0].confidence in {"high", "medium", "low"}
+
+
+def test_writer_keeps_upload_and_web_citations() -> None:
+    plan = ResearchPlan(
+        objective="Investigate the paper",
+        sub_questions=["claims"],
+        angles=["claims"],
+    )
+    sources = [
+        Source(
+            id="D1",
+            url="upload://paper.txt",
+            title="paper.txt",
+            snippet="Demand is rising",
+            relevance=1.0,
+            kind="upload",
+        ),
+        Source(
+            id="S1",
+            url="https://gov.uk/ev",
+            title="Gov",
+            snippet="Growth stats",
+            relevance=0.9,
+        ),
+    ]
+    scripted = Report(
+        executive_summary="The paper is directionally right.",
+        findings=[
+            Finding(
+                claim="Demand is rising",
+                evidence="The upload and official stats agree.",
+                source_ids=["D1", "S1", "missing"],
+                confidence="medium",
+                confidence_rationale="Two sources",
+            )
+        ],
+        gaps_and_risks=["Single paper"],
+        bibliography=[],
+    )
+    writer = Writer(ScriptedGateway([scripted]))
+    document = UploadedDocument(
+        id="D1",
+        filename="paper.txt",
+        excerpt="Public EV charging demand is rising.",
+    )
+    report = writer.write(
+        query="What does the paper imply?",
+        plan=plan,
+        iterations=[],
+        sources=sources,
+        documents=[document],
+    )
+    assert report.findings[0].source_ids == ["D1", "S1"]
+    assert [item.id for item in report.bibliography] == ["D1", "S1"]
+    assert "Public EV charging demand is rising." in writer._gateway.calls[0]["input"]
 
 
 def test_regression_fixture_structure() -> None:

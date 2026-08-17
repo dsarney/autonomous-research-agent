@@ -20,6 +20,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from app.agent.sources import is_web_url
 from app.models import ResearchRun, Source
 
 
@@ -37,6 +38,10 @@ def report_to_docx(run: ResearchRun) -> bytes:
     question = document.add_paragraph()
     question.add_run("Question: ").bold = True
     question.add_run(run.query)
+    if run.documents:
+        docs = document.add_paragraph()
+        docs.add_run("Uploaded documents: ").bold = True
+        docs.add_run(", ".join(item.filename for item in run.documents))
 
     document.add_heading("Executive summary", level=1)
     document.add_paragraph(report.executive_summary.strip())
@@ -68,7 +73,7 @@ def report_to_docx(run: ResearchRun) -> bytes:
             paragraph.add_run(f"[{source.id}] {source.title}").bold = True
             paragraph.add_run(" — ")
             paragraph.add_run(source.snippet)
-            if source.url:
+            if is_web_url(source.url):
                 paragraph.add_run(" ")
                 _add_hyperlink(paragraph, source.url, source.url)
     else:
@@ -149,12 +154,22 @@ def report_to_pdf(run: ResearchRun) -> bytes:
     story = [
         Paragraph("Research report", title_style),
         Paragraph(f"<b>Question:</b> {escape(run.query)}", body_style),
-        Paragraph("Executive summary", heading_style),
-        Paragraph(
-            escape(report.executive_summary.strip()).replace("\n", "<br/>"), body_style
-        ),
-        Paragraph("Findings", heading_style),
     ]
+    if run.documents:
+        names = ", ".join(item.filename for item in run.documents)
+        story.append(
+            Paragraph(f"<b>Uploaded documents:</b> {escape(names)}", body_style)
+        )
+    story.extend(
+        [
+            Paragraph("Executive summary", heading_style),
+            Paragraph(
+                escape(report.executive_summary.strip()).replace("\n", "<br/>"),
+                body_style,
+            ),
+            Paragraph("Findings", heading_style),
+        ]
+    )
     if not report.findings:
         story.append(Paragraph("None recorded.", body_style))
     for index, finding in enumerate(report.findings, start=1):
@@ -248,7 +263,7 @@ def _bullet_list(items: list[str], style: ParagraphStyle) -> ListFlowable:
 
 
 def _pdf_source_line(source: Source) -> str:
-    url = f" ({source.url})" if source.url else ""
+    url = f" ({source.url})" if is_web_url(source.url) else ""
     return f"[{source.id}] {source.title}{url} — {source.snippet}"
 
 

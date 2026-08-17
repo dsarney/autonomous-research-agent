@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from app.agent.documents import format_document_context
 from app.agent.gateway import Gateway
-from app.models import IterationLog, Report, ResearchPlan, Source
+from app.models import IterationLog, Report, ResearchPlan, Source, UploadedDocument
 
 WRITER_INSTRUCTIONS = """You are a research report writer.
 Turn the investigation log into an evidence-backed report.
@@ -12,6 +13,19 @@ Rules:
 - confidence is high, medium, or low with a short rationale tied to source quality and agreement.
 - gaps_and_risks: what remains uncertain or could invalidate the conclusion.
 - bibliography: reuse the provided sources; do not invent URLs.
+- If evidence is thin, say so and lower confidence. Do not fabricate facts.
+"""
+
+DOCUMENT_WRITER_INSTRUCTIONS = """You are a research report writer.
+Turn the investigation log into an evidence-backed report grounded in uploaded documents.
+
+Rules:
+- executive_summary: 1-3 paragraphs answering the original question cautiously.
+- Ground findings in uploaded documents (D*) first, then use web sources (S*) for corroboration, contradiction, and related work.
+- findings: distinct claims. Each must cite source_ids from the bibliography ids provided.
+- confidence is high, medium, or low with a short rationale tied to source quality and agreement.
+- gaps_and_risks: what remains uncertain or could invalidate the conclusion.
+- bibliography: reuse the provided sources; do not invent URLs or document quotations.
 - If evidence is thin, say so and lower confidence. Do not fabricate facts.
 """
 
@@ -27,6 +41,7 @@ class Writer:
         plan: ResearchPlan,
         iterations: list[IterationLog],
         sources: list[Source],
+        documents: list[UploadedDocument] | None = None,
     ) -> Report:
         iteration_text = []
         for item in iterations:
@@ -37,13 +52,14 @@ class Writer:
             )
         source_text = (
             "\n".join(
-                f"- id={s.id} title={s.title} url={s.url} relevance={s.relevance:.2f} snippet={s.snippet}"
+                f"- id={s.id} kind={s.kind} title={s.title} url={s.url} relevance={s.relevance:.2f} snippet={s.snippet}"
                 for s in sources
             )
             or "- none"
         )
+        context = format_document_context(documents)
         prompt = (
-            f"User question: {query}\n"
+            (f"{context}\n\n" if context else "") + f"User question: {query}\n"
             f"Objective: {plan.objective}\n"
             f"Sub-questions: {plan.sub_questions}\n"
             f"Angles: {plan.angles}\n"
@@ -53,7 +69,9 @@ class Writer:
         report = self._gateway.parse(
             input=prompt,
             text_format=Report,
-            instructions=WRITER_INSTRUCTIONS,
+            instructions=(
+                DOCUMENT_WRITER_INSTRUCTIONS if context else WRITER_INSTRUCTIONS
+            ),
         )
         allowed = {source.id: source for source in sources}
         cleaned_findings = []

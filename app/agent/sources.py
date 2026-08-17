@@ -5,6 +5,11 @@ from urllib.parse import urlparse, urlunparse
 from app.models import Source
 
 
+def is_web_url(url: str) -> bool:
+    parsed = urlparse(url.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 def normalize_url(url: str) -> str:
     raw = url.strip()
     parsed = urlparse(raw)

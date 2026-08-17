@@ -1,15 +1,17 @@
-from fastapi.testclient import TestClient
+from pathlib import Path
 import threading
 import time
 
-from app.agent.cancel import RunCancelled
+from fastapi.testclient import TestClient
 
+from app.agent.cancel import RunCancelled
+from app.agent.documents import DEFAULT_DOCUMENT_QUERY
 from app.agent.orchestrator import Orchestrator
 from app.agent.planner import Planner
 from app.agent.researcher import Researcher
 from app.agent.writer import Writer
 from app.config import Settings
-from app.main import app, get_orchestrator, get_store
+from app.main import app, get_orchestrator, get_settings, get_store
 from app.models import (
     CoverageAssessment,
     Finding,
@@ -28,6 +30,10 @@ SETTINGS = Settings(
     max_searches_per_run=4,
     openai_timeout_seconds=30,
     relevance_threshold=0.35,
+    max_upload_files=5,
+    max_upload_mb=10,
+    max_document_chars=20_000,
+    max_total_document_chars=60_000,
 )
 
 
@@ -158,6 +164,7 @@ def test_run_wait_and_export() -> None:
         assert 'class="workspace"' in home.text
         assert 'id="progress"' in home.text
         assert 'id="stop"' in home.text
+        assert 'id="documents"' in home.text
         assert 'href="/static/styles.css"' in home.text
         styles = client.get("/static/styles.css")
         assert styles.status_code == 200
@@ -166,6 +173,7 @@ def test_run_wait_and_export() -> None:
         assert script.status_code == 200
         assert 'src="/static/main.js"' in home.text
         assert "PIPELINE" in script.text
+        assert "FormData" in script.text
         stopped = client.post(f"/research/{run_id}/stop")
         assert stopped.status_code == 200
         assert stopped.json()["status"] == "complete"
@@ -231,4 +239,128 @@ def test_stop_cancels_a_running_job() -> None:
         assert status == "cancelled"
     finally:
         gateway.close()
+        app.dependency_overrides.clear()
+
+
+SAMPLE_PAPER = Path(__file__).parent / "fixtures" / "sample_paper.txt"
+
+
+def _complete_script() -> list:
+    return [
+        ResearchPlan(objective="o", sub_questions=["q1"], angles=["claims"]),
+        SearchResult(
+            query="q1",
+            sources=[
+                Source(
+                    id="t",
+                    url="https://example.com/a",
+                    title="A",
+                    snippet="s",
+                    relevance=0.9,
+                )
+            ],
+            notes="",
+        ),
+        CoverageAssessment(
+            covered_questions=["q1"], gaps=[], follow_up_queries=[], sufficient=True
+        ),
+        Report(
+            executive_summary="Summary",
+            findings=[
+                Finding(
+                    claim="Claim",
+                    evidence="Evidence",
+                    source_ids=["D1", "S1"],
+                    confidence="medium",
+                    confidence_rationale="Upload plus web",
+                )
+            ],
+            gaps_and_risks=["Unknown unit economics"],
+            bibliography=[],
+        ),
+    ]
+
+
+def test_run_multipart_with_document() -> None:
+    gateway = ScriptedGateway(_complete_script())
+    store = RunStore()
+    app.dependency_overrides[get_orchestrator] = lambda: _orchestrator(gateway)
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/research/run",
+            data={
+                "query": "What does this paper imply for UK charging?",
+                "wait": "true",
+            },
+            files={
+                "documents": (
+                    "paper.txt",
+                    SAMPLE_PAPER.read_bytes(),
+                    "text/plain",
+                )
+            },
+        )
+        assert created.status_code == 200
+        run = created.json()
+        assert run["status"] == "complete"
+        assert run["documents"][0]["id"] == "D1"
+        assert run["documents"][0]["filename"] == "paper.txt"
+        assert run["report"]["bibliography"][0]["id"] == "D1"
+        assert run["report"]["bibliography"][0]["kind"] == "upload"
+        exported = client.get(f"/research/{run['id']}/export.docx")
+        assert exported.status_code == 200
+        assert b"upload://" not in exported.content
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_run_queryless_document_uses_default_brief() -> None:
+    gateway = ScriptedGateway(_complete_script())
+    store = RunStore()
+    app.dependency_overrides[get_orchestrator] = lambda: _orchestrator(gateway)
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/research/run",
+            data={"query": "", "wait": "true"},
+            files={"documents": ("paper.txt", SAMPLE_PAPER.read_bytes(), "text/plain")},
+        )
+        assert created.status_code == 200
+        assert created.json()["query"] == DEFAULT_DOCUMENT_QUERY
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_run_rejects_unsupported_and_oversize_uploads() -> None:
+    store = RunStore()
+    app.dependency_overrides[get_orchestrator] = lambda: _orchestrator(
+        ScriptedGateway([])
+    )
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    try:
+        unsupported = client.post(
+            "/research/run",
+            data={"query": "What does this file say about charging?", "wait": "true"},
+            files={"documents": ("photo.png", b"not-a-document", "image/png")},
+        )
+        assert unsupported.status_code == 422
+        tiny = SETTINGS.__class__(**{**SETTINGS.__dict__, "max_upload_mb": 1})
+        app.dependency_overrides[get_settings] = lambda: tiny
+        oversize = client.post(
+            "/research/run",
+            data={"query": "What does this file say about charging?", "wait": "true"},
+            files={
+                "documents": (
+                    "big.txt",
+                    b"x" * (1024 * 1024 + 1),
+                    "text/plain",
+                )
+            },
+        )
+        assert oversize.status_code == 422
+    finally:
         app.dependency_overrides.clear()

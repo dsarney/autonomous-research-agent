@@ -15,6 +15,7 @@ from app.models import (
     ResearchRun,
     SearchResult,
     Source,
+    UploadedDocument,
 )
 from tests.fakes import ScriptedGateway
 
@@ -25,6 +26,10 @@ SETTINGS = Settings(
     max_searches_per_run=8,
     openai_timeout_seconds=30,
     relevance_threshold=0.35,
+    max_upload_files=5,
+    max_upload_mb=10,
+    max_document_chars=20_000,
+    max_total_document_chars=60_000,
 )
 
 
@@ -165,3 +170,61 @@ def test_orchestrator_stops_when_cancel_event_is_set() -> None:
     assert result.status == "cancelled"
     assert result.current_stage == "cancelled"
     assert gateway.calls == []
+
+
+def test_orchestrator_seeds_uploaded_documents_before_web_sources() -> None:
+    plan = ResearchPlan(
+        objective="Investigate the uploaded paper",
+        sub_questions=["Do other sources support the claim?"],
+        angles=["claims", "related work"],
+    )
+    search = SearchResult(
+        query="related evidence",
+        sources=[_source("https://gov.uk/ev")],
+        notes="web",
+    )
+    done = CoverageAssessment(
+        covered_questions=["Do other sources support the claim?"],
+        gaps=[],
+        follow_up_queries=[],
+        sufficient=True,
+    )
+    report = Report(
+        executive_summary="The paper's claim is plausible.",
+        findings=[
+            Finding(
+                claim="Demand is rising",
+                evidence="The upload and a government source agree.",
+                source_ids=["D1", "S1"],
+                confidence="medium",
+                confidence_rationale="Upload plus one web source",
+            )
+        ],
+        gaps_and_risks=["Single paper"],
+        bibliography=[],
+    )
+    gateway = ScriptedGateway([plan, search, done, report])
+    orchestrator = Orchestrator(
+        Planner(gateway), Researcher(gateway), Writer(gateway), SETTINGS
+    )
+    paper = UploadedDocument(
+        id="D1",
+        filename="paper.txt",
+        content_type="text/plain",
+        char_count=40,
+        excerpt="Public EV charging demand is rising.",
+    )
+    result = orchestrator.run(
+        ResearchRun(
+            id="run-docs",
+            query="What does this paper imply for UK charging?",
+            documents=[paper],
+        )
+    )
+    assert result.status == "complete"
+    assert result.progress[0].label == "Reading 1 document"
+    assert result.report is not None
+    assert [item.id for item in result.report.bibliography] == ["D1", "S1"]
+    assert result.report.bibliography[0].kind == "upload"
+    assert "Public EV charging demand is rising." in gateway.calls[0]["input"]
+    assert "paper.txt" in gateway.calls[1]["input"]

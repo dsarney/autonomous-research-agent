@@ -7,10 +7,19 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
+from starlette.datastructures import FormData, UploadFile
 
+from app.agent.documents import (
+    DEFAULT_DOCUMENT_QUERY,
+    DocumentError,
+    IncomingFile,
+    extract_documents,
+)
 from app.agent.export import report_to_docx, report_to_pdf
 from app.agent.gateway import OpenAIGateway
 from app.agent.orchestrator import Orchestrator
@@ -28,6 +37,7 @@ from app.models import (
     RunRequest,
     SearchRequest,
     SearchResult,
+    UploadedDocument,
 )
 from app.store import RunStore
 
@@ -117,17 +127,24 @@ def search(
 
 
 @app.post("/research/run", response_model=ResearchRun)
-def start_run(
-    body: RunRequest,
+async def start_run(
+    request: Request,
     orchestrator: Orchestrator = Depends(get_orchestrator),
     store: RunStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
 ) -> ResearchRun:
-    run = ResearchRun(id=str(uuid.uuid4()), query=body.query.strip(), status="pending")
+    query, wait, documents = await _parse_run_payload(request, settings)
+    run = ResearchRun(
+        id=str(uuid.uuid4()),
+        query=query,
+        status="pending",
+        documents=documents,
+    )
     store.save(run)
     closer = getattr(orchestrator.gateway, "close", None)
     # Register cancel event + gateway close so Stop can abort an in-flight request.
     cancel_event = store.register(run.id, closer if callable(closer) else None)
-    if body.wait:
+    if wait:
         try:
             finished = orchestrator.run(
                 run, on_update=store.save, cancel_event=cancel_event
@@ -216,3 +233,77 @@ def _run_ready_for_export(run_id: str, store: RunStore) -> ResearchRun:
     if run.report is None:
         raise HTTPException(status_code=409, detail="Report is not ready to export")
     return run
+
+
+async def _parse_run_payload(
+    request: Request, settings: Settings
+) -> tuple[str, bool, list[UploadedDocument]]:
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        try:
+            query = str(form.get("query") or "").strip()
+            wait = _truthy(form.get("wait"))
+            incoming = await _incoming_files(form)
+            try:
+                documents = extract_documents(
+                    incoming,
+                    max_files=settings.max_upload_files,
+                    max_upload_mb=settings.max_upload_mb,
+                    max_chars_per_file=settings.max_document_chars,
+                    max_total_chars=settings.max_total_document_chars,
+                )
+            except DocumentError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            return _resolve_query(query, documents), wait, documents
+        finally:
+            await form.close()
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Invalid JSON body") from exc
+    try:
+        body = RunRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+    return body.query.strip(), body.wait, []
+
+
+def _resolve_query(query: str, documents: list[UploadedDocument]) -> str:
+    if len(query) >= 3:
+        return query
+    if query:
+        raise HTTPException(
+            status_code=422,
+            detail="Query must be at least 3 characters, or leave it blank when uploading documents.",
+        )
+    if documents:
+        return DEFAULT_DOCUMENT_QUERY
+    raise HTTPException(
+        status_code=422,
+        detail="Provide a research question or upload at least one document.",
+    )
+
+
+def _truthy(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _incoming_files(form: FormData) -> list[IncomingFile]:
+    incoming: list[IncomingFile] = []
+    for item in form.getlist("documents"):
+        if not isinstance(item, UploadFile):
+            continue
+        filename = (item.filename or "").strip()
+        if not filename:
+            continue
+        data = await item.read()
+        incoming.append(
+            IncomingFile(
+                filename=filename,
+                content_type=item.content_type or "",
+                data=data,
+            )
+        )
+    return incoming

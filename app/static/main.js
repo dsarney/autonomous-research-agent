@@ -13,20 +13,49 @@ document.addEventListener("DOMContentLoaded", () => {
   const submit = document.getElementById("submit");
   const stop = document.getElementById("stop");
   const queryEl = document.getElementById("query");
+  const fileInput = document.getElementById("documents");
+  const fileList = document.getElementById("file-list");
   let activeRunId = null;
+  let selectedFiles = [];
+
+  fileInput.addEventListener("change", () => {
+    for (const file of fileInput.files) {
+      const exists = selectedFiles.some(
+        (item) =>
+          item.name === file.name &&
+          item.size === file.size &&
+          item.lastModified === file.lastModified,
+      );
+      if (!exists) selectedFiles.push(file);
+    }
+    fileInput.value = "";
+    renderFileChips();
+    syncQueryRequired();
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     output.innerHTML = "";
     progressEl.innerHTML = "";
+    const query = queryEl.value.trim();
+    if (query.length < 3 && selectedFiles.length === 0) {
+      statusEl.innerHTML =
+        '<span class="error">Enter a research question or upload at least one document.</span>';
+      return;
+    }
     submit.disabled = true;
     stop.disabled = false;
     statusEl.textContent = "Starting research…";
     try {
+      const body = new FormData();
+      body.append("query", queryEl.value);
+      body.append("wait", "false");
+      for (const file of selectedFiles) {
+        body.append("documents", file);
+      }
       const created = await fetch("/research/run", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: queryEl.value, wait: false }),
+        body,
       });
       if (!created.ok) {
         const err = await created
@@ -112,7 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderProgress(run) {
     const steps = PIPELINE.map((step) => {
       const state = pipelineState(run, step.id);
-      return `<div class="step ${state}"><strong>${step.title}</strong>${step.hint}</div>`;
+      return `<div class="step ${state}"><strong>${step.title}</strong><span class="step-hint">${step.hint}</span></div>`;
     }).join("");
     const events = (run.progress || [])
       .map((event) => {
@@ -129,6 +158,14 @@ document.addEventListener("DOMContentLoaded", () => {
         .join("");
       planHtml = `<section class="panel"><h2>Research plan</h2><p>${escapeHtml(run.plan.objective)}</p><ul class="plan-preview">${questions}</ul></section>`;
     }
+    const docs = (run.documents || [])
+      .map(
+        (doc) => `<li>${escapeHtml(doc.id)} ${escapeHtml(doc.filename)}</li>`,
+      )
+      .join("");
+    const docsHtml = docs
+      ? `<section class="panel"><h2>Uploaded documents</h2><ul>${docs}</ul></section>`
+      : "";
     progressEl.innerHTML = `
       <div class="pipeline">${steps}</div>
       <div class="progress-grid">
@@ -138,6 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </section>
         ${planHtml || `<section class="panel"><h2>Research plan</h2><p>The plan will appear here once planning finishes.</p></section>`}
       </div>
+      ${docsHtml}
     `;
   }
 
@@ -169,10 +207,7 @@ document.addEventListener("DOMContentLoaded", () => {
         .join("") || "<li>None recorded</li>";
     const bib =
       (report.bibliography || [])
-        .map(
-          (source) =>
-            `<li>[${escapeHtml(source.id)}] <a href="${escapeAttr(source.url)}" target="_blank" rel="noopener">${escapeHtml(source.title)}</a> — ${escapeHtml(source.snippet)}</li>`,
-        )
+        .map((source) => bibliographyItem(source))
         .join("") || "<li>None</li>";
     const log = (run.iterations || [])
       .map((item) => {
@@ -182,6 +217,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return `<li>Iteration ${item.iteration}: searched ${escapeHtml(queries)}. Gaps: ${escapeHtml(gaps)}. Sufficient: ${item.assessment.sufficient}</li>`;
       })
       .join("");
+    const docs = (run.documents || [])
+      .map(
+        (doc) => `<li>${escapeHtml(doc.id)} ${escapeHtml(doc.filename)}</li>`,
+      )
+      .join("");
     output.innerHTML = `
       <div class="report-toolbar">
         <h2 class="section-title">Report</h2>
@@ -190,6 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <a href="/research/${run.id}/export.pdf">Download PDF</a>
         </p>
       </div>
+      ${docs ? `<section class="panel"><h2>Uploaded documents</h2><ul>${docs}</ul></section>` : ""}
       <section class="panel">
         <h2>Executive summary</h2>
         <p>${escapeHtml(report.executive_summary)}</p>
@@ -212,7 +253,48 @@ document.addEventListener("DOMContentLoaded", () => {
       </section>
     `;
   }
+
+  function renderFileChips() {
+    fileList.innerHTML = selectedFiles
+      .map((file, index) => {
+        return `<li class="file-chip"><span>${escapeHtml(file.name)}</span><button type="button" data-index="${index}" aria-label="Remove ${escapeAttr(file.name)}">&times;</button></li>`;
+      })
+      .join("");
+    fileList.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedFiles.splice(Number(button.dataset.index), 1);
+        renderFileChips();
+        syncQueryRequired();
+      });
+    });
+  }
+
+  function syncQueryRequired() {
+    if (selectedFiles.length) {
+      queryEl.removeAttribute("required");
+      queryEl.removeAttribute("minlength");
+    } else {
+      queryEl.setAttribute("minlength", "3");
+    }
+  }
 });
+
+function bibliographyItem(source) {
+  const snippet = escapeHtml(source.snippet);
+  if (source.kind === "upload" || !isWebUrl(source.url)) {
+    return `<li>[${escapeHtml(source.id)}] ${escapeHtml(source.title)} — ${snippet}</li>`;
+  }
+  return `<li>[${escapeHtml(source.id)}] <a href="${escapeAttr(source.url)}" target="_blank" rel="noopener">${escapeHtml(source.title)}</a> — ${snippet}</li>`;
+}
+
+function isWebUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function formatDetail(detail) {
   if (!detail) return "";

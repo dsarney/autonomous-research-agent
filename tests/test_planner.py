@@ -1,5 +1,5 @@
-from app.agent.planner import Planner
-from app.models import ResearchPlan
+from app.agent.planner import DOCUMENT_PLANNER_INSTRUCTIONS, Planner
+from app.models import ResearchPlan, UploadedDocument
 from tests.fakes import ScriptedGateway
 
 EV_QUERY = (
@@ -26,3 +26,17 @@ def test_planner_returns_structured_plan() -> None:
     assert len(plan.sub_questions) >= 4
     assert "competitors" in plan.angles
     assert "risks" in plan.angles
+
+
+def test_planner_includes_uploaded_document_excerpts() -> None:
+    planner = Planner(ScriptedGateway([EV_PLAN]))
+    document = UploadedDocument(
+        id="D1",
+        filename="paper.txt",
+        excerpt="The authors claim charging demand is rising.",
+    )
+    plan = planner.create(EV_QUERY, documents=[document])
+    assert plan.objective
+    call = planner.gateway.calls[0]
+    assert "The authors claim charging demand is rising." in call["input"]
+    assert call["instructions"] == DOCUMENT_PLANNER_INSTRUCTIONS

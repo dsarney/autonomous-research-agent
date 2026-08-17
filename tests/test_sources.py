@@ -1,4 +1,4 @@
-from app.agent.sources import filter_sources, normalize_url
+from app.agent.sources import filter_sources, is_web_url, normalize_url
 from app.models import Source
 
 
@@ -40,3 +40,9 @@ def test_filter_ranks_by_relevance() -> None:
     ]
     kept, _discarded = filter_sources(sources)
     assert [item.id for item in kept] == ["high", "low"]
+
+
+def test_is_web_url() -> None:
+    assert is_web_url("https://example.com/paper")
+    assert not is_web_url("upload://paper.pdf")
+    assert not is_web_url("")

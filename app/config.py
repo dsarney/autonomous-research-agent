@@ -30,6 +30,10 @@ class Settings:
     max_searches_per_run: int
     openai_timeout_seconds: float
     relevance_threshold: float
+    max_upload_files: int
+    max_upload_mb: int
+    max_document_chars: int
+    max_total_document_chars: int
 
 
 def load_settings() -> Settings:
@@ -40,4 +44,8 @@ def load_settings() -> Settings:
         max_searches_per_run=max(1, _int_env("MAX_SEARCHES_PER_RUN", 8)),
         openai_timeout_seconds=max(1.0, _float_env("OPENAI_TIMEOUT_SECONDS", 120.0)),
         relevance_threshold=min(1.0, max(0.0, _float_env("RELEVANCE_THRESHOLD", 0.35))),
+        max_upload_files=max(1, _int_env("MAX_UPLOAD_FILES", 5)),
+        max_upload_mb=max(1, _int_env("MAX_UPLOAD_MB", 10)),
+        max_document_chars=max(500, _int_env("MAX_DOCUMENT_CHARS", 20_000)),
+        max_total_document_chars=max(500, _int_env("MAX_TOTAL_DOCUMENT_CHARS", 60_000)),
     )

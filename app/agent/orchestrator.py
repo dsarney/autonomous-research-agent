@@ -7,6 +7,7 @@ import threading
 from openai import APIStatusError, APITimeoutError, OpenAIError
 
 from app.agent.cancel import RunCancelled
+from app.agent.documents import documents_to_sources
 from app.agent.planner import Planner
 from app.agent.researcher import Researcher
 from app.agent.sources import normalize_url
@@ -61,10 +62,19 @@ class Orchestrator:
         bind = getattr(self.gateway, "bind_cancel", None)
         if callable(bind):
             bind(cancel_event)  # Wire stop into the gateway before any LLM call.
+        if run.documents:
+            count = len(run.documents)
+            self._publish(
+                run,
+                "planning",
+                f"Reading {count} document{'s' if count != 1 else ''}",
+                on_update,
+                detail=", ".join(item.filename for item in run.documents),
+            )
         self._publish(run, "planning", "Planning the investigation", on_update)
         try:
             self._raise_if_cancelled(cancel_event)
-            plan = self.planner.create(run.query)
+            plan = self.planner.create(run.query, documents=run.documents)
             self._raise_if_cancelled(cancel_event)
             run.plan = plan
             self._publish(
@@ -85,6 +95,7 @@ class Orchestrator:
                 plan=plan,
                 iterations=iterations,
                 sources=sources,
+                documents=run.documents,
             )
             self._raise_if_cancelled(cancel_event)
             run.status = "complete"
@@ -147,9 +158,10 @@ class Orchestrator:
         on_update: ProgressCallback | None,
         cancel_event: threading.Event | None = None,
     ) -> tuple[list[Source], list[IterationLog]]:
-        collected: list[Source] = []
+        uploaded = documents_to_sources(run.documents)
+        collected: list[Source] = list(uploaded)
         iterations: list[IterationLog] = []
-        seen_urls: set[str] = set()
+        seen_urls: set[str] = {normalize_url(item.url) for item in uploaded}
         pending = list(
             plan.sub_questions
         )  # Later rounds replace this with follow_up_queries.
@@ -176,7 +188,9 @@ class Orchestrator:
                     on_update,
                     detail=question,
                 )
-                result, dropped = self.researcher.search(question, seen_urls=seen_urls)
+                result, dropped = self.researcher.search(
+                    question, seen_urls=seen_urls, documents=run.documents
+                )
                 self._raise_if_cancelled(cancel_event)
                 searches_used += 1
                 numbered = []
@@ -198,7 +212,9 @@ class Orchestrator:
                 on_update,
                 detail=f"{len(collected)} sources so far",
             )
-            assessment = self.researcher.assess(plan, collected)
+            assessment = self.researcher.assess(
+                plan, collected, documents=run.documents
+            )
             self._raise_if_cancelled(cancel_event)
             iterations.append(
                 IterationLog(
