@@ -46,8 +46,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
-  padding: max(1rem, env(safe-area-inset-top)) max(1.75rem, env(safe-area-inset-right))
-    1rem max(1.75rem, env(safe-area-inset-left));
+  padding: max(1rem, env(safe-area-inset-top))
+    max(1.75rem, env(safe-area-inset-right)) 1rem
+    max(1.75rem, env(safe-area-inset-left));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -83,7 +84,8 @@ body {
   width: 100%;
   min-height: calc(100vh - 73px);
   padding: 1.25rem max(1.75rem, env(safe-area-inset-right))
-    max(2rem, env(safe-area-inset-bottom)) max(1.75rem, env(safe-area-inset-left));
+    max(2rem, env(safe-area-inset-bottom))
+    max(1.75rem, env(safe-area-inset-left));
 }
 
 .canvas {
